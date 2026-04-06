@@ -1,0 +1,15 @@
+[Unit]
+Description=FFmpeg Automation Worker
+After=network.target
+
+[Service]
+Type=simple
+User=ffmpeg
+WorkingDirectory=/srv/ffmpeg-automation
+ExecStart=/usr/bin/env bash /srv/ffmpeg-automation/worker.sh
+Restart=on-failure
+RestartSec=10
+Environment=FFMPEG_AUTO_ROOT=/srv/ffmpeg-automation
+
+[Install]
+WantedBy=multi-user.target

@@ -2,13 +2,17 @@
 setlocal enabledelayedexpansion
 
 REM =========================================================
-REM REMOTE ENCODE CONFIGURATION
+REM CONFIGURATION
 REM =========================================================
-set "REMOTE_HOST=autoplayer"
-set "POLL_INTERVAL=30"
+if not exist "%~dp0config.bat" (
+    echo ERROR: config.bat not found. Please create it.
+    pause
+    exit /b
+)
+call "%~dp0config.bat"
 REM =========================================================
 
-title Remote FFmpeg Encoder (rclone)
+title Remote FFmpeg Encoder (Parallel SSH)
 
 if "%~1" == "" (
     echo.
@@ -16,6 +20,11 @@ if "%~1" == "" (
     echo.
     pause
     exit /b
+)
+
+if defined SELECTED_PRESET_FILE (
+    for %%F in ("%SELECTED_PRESET_FILE%") do set "SELECTED_PRESET_NAME=%%~nF"
+    goto loop
 )
 
 echo.
@@ -64,6 +73,9 @@ echo =========================================================
 powershell.exe -ExecutionPolicy Bypass -File "%~dp0client-sync.ps1" ^
     -LocalFile "%~1" ^
     -RemoteHost "%REMOTE_HOST%" ^
+    -RemotePort "%REMOTE_PORT%" ^
+    -RemoteUser "%REMOTE_USER%" ^
+    -Threads "%THREADS%" ^
     -PresetFile "%SELECTED_PRESET_FILE%" ^
     -PollInterval %POLL_INTERVAL% ^
     -RemoveRemoteAfterDownload

@@ -1,0 +1,19 @@
+@echo off
+REM =========================================================
+REM REMOTE ENCODE CONFIGURATION
+REM =========================================================
+
+REM IP address, hostname, or SSH config alias
+set "REMOTE_HOST=123.456.789.012"
+
+REM Optional: Remote User and Port (defaults to root and 22)
+set "REMOTE_USER="
+set "REMOTE_PORT="
+
+REM How many parallel streams to use for upload/download
+set "THREADS=12"
+
+REM How often to check for completion (in seconds)
+set "POLL_INTERVAL=60"
+
+REM =========================================================

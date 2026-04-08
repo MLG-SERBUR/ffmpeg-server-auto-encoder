@@ -1,13 +1,3 @@
-# FFmpeg Automation - Server Setup
-
-This server handles single-worker sequential FFmpeg processing. It accepts video files and configuration "presets" from the client, encodes them, and provides a completion manifest.
-
-## Installation (Interactive Copy-Paste)
-
-If your server has no external internet access (IPv6 only or restricted), copy the entire block below and paste it into your SSH terminal:
-
-```bash
-cat << 'EOF' > install.sh
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -181,29 +171,3 @@ sudo systemctl daemon-reload
 echo "DONE! Setup complete in $TARGET_DIR"
 echo "To start the service: sudo systemctl enable --now ffmpeg-worker"
 echo "To view logs: journalctl -u ffmpeg-worker -f"
-EOF
-chmod +x install.sh
-./install.sh
-```
-
-> [!TIP]
-> Since you are viewing this in your editor, you can just select the full content of `server/install.sh`, paste it into the block above, and run it. The script will handle directory creation, permissions, and systemd setup for you.
-
-## How it Works
-
-1. **Incoming**: Files arrive in `incoming/`.
-2. **Presets**: The server checks for a `.preset` file alongside the video. 
-   - **Dynamic**: If it contains FFmpeg flags (sent by new clients), it uses them immediately.
-   - **Named**: If it contains a name, it looks in `presets/`.
-3. **Sequential Processing**: Jobs are processed one-at-a-time to save disk space.
-4. **Completion**: A `.done` file is created in `finished/` containing the file hash and output metadata.
-
-## FAQs
-
-### Are the presets in the server folder necessary?
-**No.** With the new dynamic preset system, the client sends all necessary flags to the server at runtime. The `presets/` folder on the server is now only used as a fallback or for "legacy" named presets.
-
-### Manual Operation
-The service runs under `ffmpeg-worker.service`.
-- **Start**: `sudo systemctl start ffmpeg-worker`
-- **Logs**: `journalctl -u ffmpeg-worker -f`

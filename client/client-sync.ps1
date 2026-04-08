@@ -33,13 +33,23 @@ $remoteFinal = "$RemoteIncomingPath/$baseName"
 $remotePreset = "$RemoteIncomingPath/$nameNoExt.preset"
 $remoteDone = "$RemoteFinishedPath/$nameNoExt.done"
 
+function Get-ShellSafe {
+    param($val)
+    if ($null -eq $val) { return "''" }
+    return "'" + $val.ToString().Replace("'", "'\''") + "'"
+}
+
 # 1. Prepare Preset
 $tmpPreset = [System.IO.Path]::GetTempFileName()
 if ($PresetFile -and (Test-Path $PresetFile)) {
     Write-Log "Loading dynamic preset from $PresetFile"
     . $PresetFile
     # Convert PS variables to Shell variables for the server
-    $presetContent = "VIDEO_ENCODER='$VIDEO_ENCODER'`nAUDIO_ENCODER='$AUDIO_ENCODER'`nOUTPUT_SUFFIX='$OUTPUT_SUFFIX'`nFINAL_EXT='$FINAL_EXT'`nMOV_FLAGS='$MOV_FLAGS'"
+    $presetContent = "VIDEO_ENCODER=$(Get-ShellSafe $VIDEO_ENCODER)`n" +
+                     "AUDIO_ENCODER=$(Get-ShellSafe $AUDIO_ENCODER)`n" +
+                     "OUTPUT_SUFFIX=$(Get-ShellSafe $OUTPUT_SUFFIX)`n" +
+                     "FINAL_EXT=$(Get-ShellSafe $FINAL_EXT)`n" +
+                     "MOV_FLAGS=$(Get-ShellSafe $MOV_FLAGS)"
     Set-Content -Path $tmpPreset -Value $presetContent -Encoding ASCII
 } elseif ($NamedPreset) {
     Write-Log "Using named preset: $NamedPreset"

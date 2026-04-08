@@ -32,12 +32,31 @@ DEFAULT_PRESET="${DEFAULT_PRESET:-default}"
 MIN_FREE_BYTES="${MIN_FREE_BYTES:-1073741824}"
 KEEP_INPUT_ON_SUCCESS="${KEEP_INPUT_ON_SUCCESS:-false}"
 
-log() { echo "[$(date -Is)] $*"; }
+# Robust logging
+log() {
+  local timestamp
+  timestamp=$(date +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || date || echo "unknown")
+  echo "[$timestamp] $*"
+}
+
+# Error trap
+failure() {
+  local lineno=$1
+  log "CRITICAL: Script failed at line $lineno. Exiting."
+}
+trap 'failure $LINENO' ERR
 
 check_disk() {
-  avail_bytes=$(df -P "$BASE_DIR" | awk 'NR==2 {print $4 * 1024}')
-  if [ "${avail_bytes:-0}" -lt "$MIN_FREE_BYTES" ]; then
-    log "Insufficient free space. Sleeping."
+  local avail_bytes
+  # df -P is POSIX standard format
+  avail_bytes=$(df -P "$BASE_DIR" 2>/dev/null | awk 'NR==2 {print $4 * 1024}')
+  if [ -z "$avail_bytes" ]; then
+    log "Warning: Could not determine disk space. Assuming enough."
+    return 0
+  fi
+  
+  if [ "$avail_bytes" -lt "$MIN_FREE_BYTES" ]; then
+    log "Insufficient free space ($((avail_bytes / 1024 / 1024)) MB available). Sleeping."
     return 1
   fi
   return 0
@@ -51,64 +70,110 @@ process_job() {
 
   log "Processing $input_path"
   
+  # Move preset if it exists
   if [ -f "$INCOMING/${name}.preset" ]; then
     mv "$INCOMING/${name}.preset" "$PROCESSING/${name}.preset" || true
   fi
 
-  # Reset variables
+  # Reset variables to ensure clean slate for each job
   unset VIDEO_ENCODER AUDIO_ENCODER OUTPUT_SUFFIX FINAL_EXT MOV_FLAGS INPUT_OPTIONS || true
 
   # Determine preset
   if [ -f "$PROCESSING/${name}.preset" ]; then
     if grep -q "=" "$PROCESSING/${name}.preset"; then
       log "Found dynamic parameters; sourcing."
-      source "$PROCESSING/${name}.preset"
+      # Source in a subshell or check for errors
+      if ! source "$PROCESSING/${name}.preset"; then
+         log "Error: Failed to source dynamic preset. Using defaults."
+      fi
     else
-      preset_name="$(cat "$PROCESSING/${name}.preset" | tr -d '\r\n')"
-      [ -f "$PRESETS_DIR/${preset_name}.sh" ] && source "$PRESETS_DIR/${preset_name}.sh"
+      local preset_name
+      preset_name=$(cat "$PROCESSING/${name}.preset" | tr -d '\r\n')
+      if [ -f "$PRESETS_DIR/${preset_name}.sh" ]; then
+        source "$PRESETS_DIR/${preset_name}.sh"
+      else
+        log "Preset '$preset_name' not found."
+      fi
     fi
   else
-    [ -f "$PRESETS_DIR/${DEFAULT_PRESET}.sh" ] && source "$PRESETS_DIR/${DEFAULT_PRESET}.sh"
+    if [ -f "$PRESETS_DIR/${DEFAULT_PRESET}.sh" ]; then
+      source "$PRESETS_DIR/${DEFAULT_PRESET}.sh"
+    fi
   fi
 
   export OUTPUT_DIR="$FINISHED"
+  
+  if [ ! -x "$SCRIPT_DIR/delivery.sh" ]; then
+    log "Error: delivery.sh not found or not executable!"
+    mv "$PROCESSING/$filename" "$FAILED/"
+    return 1
+  fi
+
+  log "Starting delivery script for $filename..."
   "$SCRIPT_DIR/delivery.sh" "$PROCESSING/$filename" > "$logfile" 2>&1
-  ret=$?
+  local ret=$?
 
   if [ $ret -eq 0 ]; then
+    local expected_output
     expected_output=$(find "$FINISHED" -maxdepth 1 -type f -iname "${name}*" | head -n 1)
     if [ -n "$expected_output" ]; then
+      local sha
       sha=$(sha256sum "$expected_output" | awk '{print $1}')
       echo "{\"output\":\"$(basename "$expected_output")\",\"sha256\":\"$sha\"}" > "$FINISHED/${name}.done"
-      log "Job succeeded."
+      log "Job succeeded: $(basename "$expected_output")"
       if [ "$KEEP_INPUT_ON_SUCCESS" = "true" ]; then
         mv "$PROCESSING/$filename" "$ARCHIVE/"
       else
         rm -f "$PROCESSING/$filename"
       fi
+    else
+      log "Error: FFmpeg finished but output file not found."
+      mv "$PROCESSING/$filename" "$FAILED/"
     fi
   else
-    log "Job failed (exit $ret)."
+    log "Job failed (exit $ret). Check logs: $logfile"
     mv "$PROCESSING/$filename" "$FAILED/"
     echo "{\"error\":$ret}" > "$FAILED/${name}.failed"
   fi
   rm -f "$PROCESSING/${name}.preset" || true
 }
 
-log "ffmpeg-worker started (target: $BASE_DIR)"
+log "ffmpeg-worker starting (target: $BASE_DIR)"
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  log "CRITICAL: ffmpeg command not found in PATH!"
+fi
+
+poll_count=0
 while true; do
   check_disk || { sleep 10; continue; }
+  
   jobfile=""
+  # Use nullglob to avoid literal '*' if no files
+  shopt -s nullglob
   for f in "$INCOMING"/*; do
-    [ -e "$f" ] || continue
     bn=$(basename "$f")
     [[ "$bn" =~ \.(partial|preset)$ ]] && continue
+    
+    log "Detected file: $bn. Attempting to claim..."
     if mv "$f" "$PROCESSING/"; then
-      jobfile="$PROCESSING/$(basename "$f")"
+      jobfile="$PROCESSING/$bn"
       break
+    else
+      log "Warning: Failed to move $bn (permissions? or already claimed?)"
     fi
   done
-  if [ -z "$jobfile" ]; then sleep 3; continue; fi
+  shopt -u nullglob
+
+  if [ -z "$jobfile" ]; then
+    ((poll_count++))
+    if [ $((poll_count % 100)) -eq 0 ]; then
+      log "Heartbeat: Polling $INCOMING (attempt $poll_count)..."
+    fi
+    sleep 3
+    continue
+  fi
+  
+  poll_count=0 # Reset on job
   process_job "$jobfile"
 done
 EOF_WORKER

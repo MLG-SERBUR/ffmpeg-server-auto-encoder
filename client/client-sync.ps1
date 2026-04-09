@@ -377,6 +377,7 @@ try {
     $startTime = Get-Date
     $remoteLogPath = ""
     $lastStatusUpdate = Get-Date
+    $serverFailed = $false
     
     while ($true) {
         try {
@@ -389,8 +390,8 @@ try {
             }
             if ($completionCheck -match 'FAILED') {
                 Write-Host ""
-                Write-Log "Error: Encoding failed on the server. Check logs."
-                exit 1
+                $serverFailed = $true
+                break
             }
             
             # Try to find the log file if we don't have it yet
@@ -425,6 +426,10 @@ try {
         Start-Sleep -Seconds $sleepSecs
     }
 
+    if ($serverFailed) {
+        throw "Encoding failed on the server. Check logs."
+    }
+
     # 6. Retrieve .done metadata (Small file, use Invoke-SCP)
     $tmpDone = [System.IO.Path]::GetTempFileName()
     Invoke-SCP -src "${target}:${remoteDone}" -dest "$tmpDone"
@@ -453,20 +458,23 @@ try {
             Write-Warning "Remote: $($doneJson.sha256)"
         }
     }
-}
-finally {
-    # No cleanup needed
-}
+    # 9. Local Archive/Delete (Moved inside the Try block)
+    try {
+        Write-Log "Archiving local source..."
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($fullLocal,[Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+    } catch {
+        $delDir = Join-Path (Split-Path $fullLocal -Parent) 'done'
+        if (-not (Test-Path $delDir)) { New-Item -ItemType Directory $delDir }
+        Move-Item -Path $fullLocal -Destination $delDir -Force
+    }
 
-# 9. Local Archive/Delete
-try {
-    Write-Log "Archiving local source..."
-    Add-Type -AssemblyName Microsoft.VisualBasic
-    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($fullLocal, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-} catch {
-    $delDir = Join-Path (Split-Path $fullLocal -Parent) 'done'
-    if (-not (Test-Path $delDir)) { New-Item -ItemType Directory $delDir }
-    Move-Item -Path $fullLocal -Destination $delDir -Force
+    Write-Log "Job Finished Successfully."
+    Read-Host "Press Enter to exit..."
+} 
+catch {
+    Write-Host ""
+    Write-Error "A fatal error occurred: $($_.Exception.Message)"
+    Read-Host "Press Enter to exit..."
+    exit 1
 }
-
-Write-Log "Job Finished Successfully."

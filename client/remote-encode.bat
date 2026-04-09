@@ -85,19 +85,7 @@ echo Processing: "%~nx1"
 echo Preset: %SELECTED_PRESET_NAME%
 echo =========================================================
 
-powershell.exe -ExecutionPolicy Bypass -File "%~dp0client-sync.ps1" ^
-    -LocalFile "%~1" ^
-    -RemoteHost "%REMOTE_HOST%" ^
-    -RemotePort "%REMOTE_PORT%" ^
-    -RemoteUser "%REMOTE_USER%" ^
-    -Threads "%THREADS%" ^
-    -VideoEncoder "%VIDEO_ENCODER%" ^
-    -AudioEncoder "%AUDIO_ENCODER%" ^
-    -OutputSuffix "%OUTPUT_SUFFIX%" ^
-    -FinalExt "%FINAL_EXT%" ^
-    -MovFlags "%MOV_FLAGS%" ^
-    -PollInterval %POLL_INTERVAL% ^
-    -RemoveRemoteAfterDownload
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0client-sync.ps1" -LocalFile "%~1" -RemoteHost "%REMOTE_HOST%"
 
 if %errorlevel% neq 0 (
     color 0c

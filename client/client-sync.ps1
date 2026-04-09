@@ -298,7 +298,7 @@ function Invoke-ParallelDownload {
                     
                     $p = [System.Diagnostics.Process]::Start($procInfo)
                     $stdout = $p.StandardOutput.BaseStream
-                    $file = [System.IO.File]::OpenWrite($localPath)
+                    $file = [System.IO.File]::Open($localPath,[System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::Write,[System.IO.FileShare]::ReadWrite)
                     $file.Seek($byteOffset, 0)
                     
                     $bufSize = 256KB

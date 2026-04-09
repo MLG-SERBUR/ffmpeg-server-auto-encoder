@@ -87,7 +87,7 @@ function Invoke-SCP {
     throw "SCP failed after $maxRetries attempts: $src -> $dest"
 }
 
-if (-not (Test-Path $LocalFile)) { Write-Error "Local file not found: $LocalFile"; exit 2 }
+if (-not (Test-Path $LocalFile)) { Write-Error "Local file not found: $LocalFile"; Read-Host "Press Enter to exit..."; exit 2 }
 
 $fullLocal = (Resolve-Path $LocalFile).Path
 $baseName = [System.IO.Path]::GetFileName($fullLocal)

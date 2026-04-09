@@ -381,7 +381,7 @@ try {
     while ($true) {
         try {
             # Check for completion or failure
-            $completionCheck = Invoke-SSH "test -f '$remoteDone' && echo DONE; test -f '$remoteFailed' && echo FAILED" -maxRetries 2
+            $completionCheck = Invoke-SSH "if [ -f '$remoteDone' ]; then echo DONE; fi; if [ -f '$remoteFailed' ]; then echo FAILED; fi; exit 0" -maxRetries 2
             if ($completionCheck -match 'DONE') { 
                 Write-Host "" # Clear line
                 Write-Log "Encoding finished successfully!"
@@ -398,7 +398,7 @@ try {
                 $logDir = [System.IO.Path]::GetDirectoryName($RemoteIncomingPath) + "/logs"
                 $logDir = $logDir.Replace('\', '/')
                 
-                $foundLog = Invoke-SSH "ls -t $logDir/${nameNoExt}_*.log 2>/dev/null | head -n 1" -maxRetries 2
+                $foundLog = Invoke-SSH "find '$logDir' -maxdepth 1 -type f -name '${nameNoExt}_*.log' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-; exit 0" -maxRetries 2
                 if ($foundLog -and $foundLog.Trim()) {
                     $remoteLogPath = $foundLog.Trim()
                     Write-Log "Found remote log: $([System.IO.Path]::GetFileName($remoteLogPath))"
@@ -408,7 +408,7 @@ try {
             $statusMsg = "Encoding in progress..."
             if ($remoteLogPath) {
                 # Just print the last line as requested
-                $lastLine = Invoke-SSH "tail -n 1 '$remoteLogPath' 2>/dev/null" -maxRetries 2
+                $lastLine = Invoke-SSH "if [ -f '$remoteLogPath' ]; then tail -n 1 '$remoteLogPath' 2>/dev/null; fi; exit 0" -maxRetries 2
                 if ($lastLine -and $lastLine.Trim()) {
                     $statusMsg = $lastLine.Trim()
                 }

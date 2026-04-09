@@ -41,6 +41,9 @@ if (-not $RemoteFinishedPath) { $RemoteFinishedPath = "/srv/ffmpeg-automation/fi
 if (-not $PollInterval) { $PollInterval = if ($env:POLL_INTERVAL) { [int]$env:POLL_INTERVAL } else { 30 } }
 if (-not $Threads) { $Threads = if ($env:THREADS) { [int]$env:THREADS } else { 6 } }
 
+# Define target for SSH/SCP calls in the main script body
+$target = if ($RemoteUser) { "${RemoteUser}@${RemoteHost}" } else { $RemoteHost }
+
 function Write-Log { param($m) Write-Host "[client] $m" -ForegroundColor Cyan }
 
 function Invoke-SSH {

@@ -22,8 +22,19 @@ if "%~1" == "" (
     exit /b
 )
 
+if defined VIDEO_ENCODER (
+    set "SELECTED_PRESET_NAME=Dynamic"
+    goto loop
+)
+
 if defined SELECTED_PRESET_FILE (
-    for %%F in ("%SELECTED_PRESET_FILE%") do set "SELECTED_PRESET_NAME=%%~nF"
+    for %%F in ("%SELECTED_PRESET_FILE%") do (
+        set "SELECTED_PRESET_NAME=%%~nF"
+        if /i "%%~xF" == ".bat" (
+            call "%%~F" %*
+            exit /b
+        )
+    )
     goto loop
 )
 
@@ -32,7 +43,7 @@ echo =========================================================
 echo SELECT PRESET
 echo =========================================================
 set count=0
-for %%f in ("%~dp0presets\*.ps1") do (
+for %%f in ("%~dp0presets\*.bat") do (
     set /a count+=1
     set "preset_name[!count!]=%%~nf"
     set "preset_file[!count!]=%%~f"
@@ -61,6 +72,10 @@ if "!SELECTED_PRESET_FILE!" == "" (
     exit /b
 )
 
+REM Execute the batch preset to set environment variables
+call "!SELECTED_PRESET_FILE!" %*
+exit /b
+
 :loop
 if "%~1" == "" goto end
 
@@ -76,7 +91,11 @@ powershell.exe -ExecutionPolicy Bypass -File "%~dp0client-sync.ps1" ^
     -RemotePort "%REMOTE_PORT%" ^
     -RemoteUser "%REMOTE_USER%" ^
     -Threads "%THREADS%" ^
-    -PresetFile "%SELECTED_PRESET_FILE%" ^
+    -VideoEncoder "%VIDEO_ENCODER%" ^
+    -AudioEncoder "%AUDIO_ENCODER%" ^
+    -OutputSuffix "%OUTPUT_SUFFIX%" ^
+    -FinalExt "%FINAL_EXT%" ^
+    -MovFlags "%MOV_FLAGS%" ^
     -PollInterval %POLL_INTERVAL% ^
     -RemoveRemoteAfterDownload
 

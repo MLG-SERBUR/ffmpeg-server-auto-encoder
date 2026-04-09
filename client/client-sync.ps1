@@ -5,7 +5,11 @@ param(
     [string]$RemoteUser,
     [string]$RemoteIncomingPath = "/srv/ffmpeg-automation/incoming",
     [string]$RemoteFinishedPath = "/srv/ffmpeg-automation/finished",
-    [string]$PresetFile = "",
+    [string]$VideoEncoder = "",
+    [string]$AudioEncoder = "",
+    [string]$OutputSuffix = "",
+    [string]$FinalExt = "",
+    [string]$MovFlags = "",
     [string]$NamedPreset = "",
     [int]$PollInterval = 30,
     [int]$Threads = 6,
@@ -28,6 +32,18 @@ $fullLocal = (Resolve-Path $LocalFile).Path
 $baseName = [System.IO.Path]::GetFileName($fullLocal)
 $nameNoExt = [System.IO.Path]::GetFileNameWithoutExtension($fullLocal)
 
+# 0. Get Duration (for progress tracking)
+$totalSeconds = 0
+try {
+    $durationStr = & ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$fullLocal"
+    if ($durationStr -match '^\d+(\.\d+)?$') {
+        $totalSeconds = [double]$durationStr
+        Write-Log "Source Duration: $([TimeSpan]::FromSeconds($totalSeconds).ToString('hh\:mm\:ss'))"
+    }
+} catch {
+    Write-Log "Warning: Could not determine source duration with ffprobe."
+}
+
 $remotePart = "$RemoteIncomingPath/$baseName.partial"
 $remoteFinal = "$RemoteIncomingPath/$baseName"
 $remotePreset = "$RemoteIncomingPath/$nameNoExt.preset"
@@ -41,19 +57,19 @@ function Get-ShellSafe {
 
 # 1. Prepare Preset
 $tmpPreset = [System.IO.Path]::GetTempFileName()
-if ($PresetFile -and (Test-Path $PresetFile)) {
-    Write-Log "Loading dynamic preset from $PresetFile"
-    . $PresetFile
+if ($VideoEncoder) {
+    Write-Log "Generating dynamic remote preset..."
     # Convert PS variables to Shell variables for the server
-    $presetContent = "VIDEO_ENCODER=$(Get-ShellSafe $VIDEO_ENCODER)`n" +
-                     "AUDIO_ENCODER=$(Get-ShellSafe $AUDIO_ENCODER)`n" +
-                     "OUTPUT_SUFFIX=$(Get-ShellSafe $OUTPUT_SUFFIX)`n" +
-                     "FINAL_EXT=$(Get-ShellSafe $FINAL_EXT)`n" +
-                     "MOV_FLAGS=$(Get-ShellSafe $MOV_FLAGS)"
+    $presetContent = "VIDEO_ENCODER=$(Get-ShellSafe $VideoEncoder)`n" +
+                     "AUDIO_ENCODER=$(Get-ShellSafe $AudioEncoder)`n" +
+                     "OUTPUT_SUFFIX=$(Get-ShellSafe $OutputSuffix)`n" +
+                     "FINAL_EXT=$(Get-ShellSafe $FinalExt)`n" +
+                     "MOV_FLAGS=$(Get-ShellSafe $MovFlags)"
     Set-Content -Path $tmpPreset -Value $presetContent -Encoding ASCII
 } elseif ($NamedPreset) {
-    Write-Log "Using named preset: $NamedPreset"
-    Set-Content -Path $tmpPreset -Value $NamedPreset -Encoding ASCII
+    Write-Log "Using named remote preset: $NamedPreset"
+    $namedContent = "PRESET_NAME=$(Get-ShellSafe $NamedPreset)"
+    Set-Content -Path $tmpPreset -Value $namedContent -Encoding ASCII
 } else {
     $tmpPreset = $null
 }
@@ -276,18 +292,49 @@ try {
 
     Write-Log "Upload complete. Waiting for encoding..."
 
-    # 5. Poll for completion
+    # 5. Poll for completion with live progress
     $startTime = Get-Date
+    $remoteLogPath = ""
+    $lastStatusUpdate = Get-Date
+    
     while ($true) {
+        # Check for completion first
         $check = Invoke-SSH "test -f '$remoteDone' && echo OK || echo NO" 
         if ($check -and $check.Trim() -eq 'OK') { 
+            Write-Host "" # Clear line
             Write-Log "Encoding finished!"
             break 
         }
         
+        # Try to find the log file if we don't have it yet
+        if (-not $remoteLogPath) {
+            $logDir = [System.IO.Path]::GetDirectoryName($RemoteIncomingPath) + "/logs"
+            # Replace backslashes with forward slashes just in case
+            $logDir = $logDir.Replace('\', '/')
+            
+            # Find the MOST RECENT log matching the filename
+            $foundLog = Invoke-SSH "ls -t $logDir/${nameNoExt}_*.log 2>/dev/null | head -n 1"
+            if ($foundLog -and $foundLog.Trim()) {
+                $remoteLogPath = $foundLog.Trim()
+                Write-Log "Found remote log: $([System.IO.Path]::GetFileName($remoteLogPath))"
+            }
+        }
+        
+        $statusMsg = "Encoding in progress..."
+        if ($remoteLogPath) {
+            # Just print the last line as requested
+            $lastLine = Invoke-SSH "tail -n 1 '$remoteLogPath' 2>/dev/null"
+            if ($lastLine -and $lastLine.Trim()) {
+                $statusMsg = $lastLine.Trim()
+            }
+        }
+        
         $elapsed = New-TimeSpan -Start $startTime -End (Get-Date)
-        Write-Log "Encoding in progress (Elapsed: $($elapsed.ToString('hh\:mm\:ss'))). Checking again in $($PollInterval)s..."
-        Start-Sleep -Seconds $PollInterval
+        Write-Host -NoNewline "`r[client] $($statusMsg) | Elapsed: $($elapsed.ToString('hh\:mm\:ss'))          "
+        
+        $sleepSecs = [Math]::Min(10, $PollInterval)
+        if ($sleepSecs -lt 2) { $sleepSecs = 2 } # Don't spam too hard
+        Start-Sleep -Seconds $sleepSecs
     }
 
     # 6. Retrieve .done metadata (Small file, use scp or simple ssh cat)

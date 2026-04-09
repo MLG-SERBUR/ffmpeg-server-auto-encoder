@@ -96,11 +96,14 @@ process_job() {
       if ! source "$PROCESSING/${name}.preset"; then
          log "Error: Failed to source dynamic preset. Using defaults."
       fi
+      # Ensure variables are exported for delivery.sh
+      export VIDEO_ENCODER AUDIO_ENCODER OUTPUT_SUFFIX FINAL_EXT MOV_FLAGS INPUT_OPTIONS
     else
       local preset_name
       preset_name=$(cat "$PROCESSING/${name}.preset" | tr -d '\r\n')
       if [ -f "$PRESETS_DIR/${preset_name}.sh" ]; then
         source "$PRESETS_DIR/${preset_name}.sh"
+        export VIDEO_ENCODER AUDIO_ENCODER OUTPUT_SUFFIX FINAL_EXT MOV_FLAGS INPUT_OPTIONS
       else
         log "Preset '$preset_name' not found."
       fi
@@ -108,6 +111,8 @@ process_job() {
   else
     if [ -f "$PRESETS_DIR/${DEFAULT_PRESET}.sh" ]; then
       source "$PRESETS_DIR/${DEFAULT_PRESET}.sh"
+      # Explicitly export just in case the preset script didn't
+      export VIDEO_ENCODER AUDIO_ENCODER OUTPUT_SUFFIX FINAL_EXT MOV_FLAGS INPUT_OPTIONS
     fi
   fi
 
@@ -193,10 +198,11 @@ cat << 'EOF_DELIVERY' | sudo tee "$TARGET_DIR/delivery.sh" > /dev/null
 #!/usr/bin/env bash
 set -euo pipefail
 INPUT="$1"
-# defaults
+# Use :- for defaults that apply if variable is empty or unset
+# Use - for defaults that apply only if variable is unset
 VIDEO_ENCODER="${VIDEO_ENCODER:--c:v libx264 -crf 22 -preset veryslow -tune film}"
 AUDIO_ENCODER="${AUDIO_ENCODER:--c:a libopus -b:a 96k}"
-OUTPUT_SUFFIX="${OUTPUT_SUFFIX:--encoded}"
+OUTPUT_SUFFIX="${OUTPUT_SUFFIX--encoded}"
 FINAL_EXT="${FINAL_EXT:-.mp4}"
 OUTPUT_DIR="${OUTPUT_DIR:-./finished}"
 MOV_FLAGS="${MOV_FLAGS:--movflags +faststart}"
@@ -210,11 +216,11 @@ EOF_DELIVERY
 
 # 4. Create default preset
 cat << 'EOF_PRESET' | sudo tee "$TARGET_DIR/presets/default.sh" > /dev/null
-VIDEO_ENCODER="-c:v libx264 -crf 22 -preset veryslow -tune film"
-AUDIO_ENCODER="-c:a libopus -b:a 96k"
-OUTPUT_SUFFIX="-encoded"
-FINAL_EXT=".mp4"
-MOV_FLAGS="-movflags +faststart"
+export VIDEO_ENCODER="-c:v libx264 -crf 22 -preset veryslow -tune film"
+export AUDIO_ENCODER="-c:a libopus -b:a 96k"
+export OUTPUT_SUFFIX="-encoded"
+export FINAL_EXT=".mp4"
+export MOV_FLAGS="-movflags +faststart"
 EOF_PRESET
 
 # 5. Permissions

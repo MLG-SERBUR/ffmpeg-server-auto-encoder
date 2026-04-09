@@ -38,6 +38,7 @@ if (-not $RemotePort) { $RemotePort = $env:REMOTE_PORT }
 if (-not $RemoteUser) { $RemoteUser = $env:REMOTE_USER }
 if (-not $RemoteIncomingPath) { $RemoteIncomingPath = "/srv/ffmpeg-automation/incoming" }
 if (-not $RemoteFinishedPath) { $RemoteFinishedPath = "/srv/ffmpeg-automation/finished" }
+if (-not $RemoteFailedPath) { $RemoteFailedPath = "/srv/ffmpeg-automation/failed" }
 if (-not $PollInterval) { $PollInterval = if ($env:POLL_INTERVAL) { [int]$env:POLL_INTERVAL } else { 30 } }
 if (-not $Threads) { $Threads = if ($env:THREADS) { [int]$env:THREADS } else { 6 } }
 
@@ -108,6 +109,7 @@ $remotePart = "$RemoteIncomingPath/$baseName.partial"
 $remoteFinal = "$RemoteIncomingPath/$baseName"
 $remotePreset = "$RemoteIncomingPath/$nameNoExt.preset"
 $remoteDone = "$RemoteFinishedPath/$nameNoExt.done"
+$remoteFailed = "$RemoteFailedPath/$nameNoExt.failed"
 
 function Get-ShellSafe {
     param($val)
@@ -120,11 +122,11 @@ $tmpPreset = [System.IO.Path]::GetTempFileName()
 if ($VideoEncoder) {
     Write-Log "Generating dynamic remote preset..."
     # Convert PS variables to Shell variables for the server
-    $presetContent = "VIDEO_ENCODER=$(Get-ShellSafe $VideoEncoder)`n" +
-                     "AUDIO_ENCODER=$(Get-ShellSafe $AudioEncoder)`n" +
-                     "OUTPUT_SUFFIX=$(Get-ShellSafe $OutputSuffix)`n" +
-                     "FINAL_EXT=$(Get-ShellSafe $FinalExt)`n" +
-                     "MOV_FLAGS=$(Get-ShellSafe $MovFlags)"
+    $presetContent = "export VIDEO_ENCODER=$(Get-ShellSafe $VideoEncoder)`n" +
+                     "export AUDIO_ENCODER=$(Get-ShellSafe $AudioEncoder)`n" +
+                     "export OUTPUT_SUFFIX=$(Get-ShellSafe $OutputSuffix)`n" +
+                     "export FINAL_EXT=$(Get-ShellSafe $FinalExt)`n" +
+                     "export MOV_FLAGS=$(Get-ShellSafe $MovFlags)"
     Set-Content -Path $tmpPreset -Value $presetContent -Encoding ASCII
 } elseif ($NamedPreset) {
     Write-Log "Using named remote preset: $NamedPreset"
@@ -378,12 +380,17 @@ try {
     
     while ($true) {
         try {
-            # Check for completion first
-            $check = Invoke-SSH "test -f '$remoteDone' && echo OK || echo NO" -maxRetries 2
-            if ($check -and $check.Trim() -eq 'OK') { 
+            # Check for completion or failure
+            $completionCheck = Invoke-SSH "test -f '$remoteDone' && echo DONE; test -f '$remoteFailed' && echo FAILED" -maxRetries 2
+            if ($completionCheck -match 'DONE') { 
                 Write-Host "" # Clear line
-                Write-Log "Encoding finished!"
+                Write-Log "Encoding finished successfully!"
                 break 
+            }
+            if ($completionCheck -match 'FAILED') {
+                Write-Host ""
+                Write-Log "Error: Encoding failed on the server. Check logs."
+                exit 1
             }
             
             # Try to find the log file if we don't have it yet

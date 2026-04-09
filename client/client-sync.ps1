@@ -415,14 +415,13 @@ try {
                 }
             }
             
-            $elapsed = New-TimeSpan -Start $startTime -End (Get-Date)
-            Write-Host -NoNewline "`r[client] $($statusMsg) | Elapsed: $($elapsed.ToString('hh\:mm\:ss'))          "
+            Write-Log $statusMsg
         } catch {
-            Write-Host -NoNewline "`r[client] Connection lost. Waiting for server...          "
+            Write-Log "Connection lost. Waiting for server..."
         }
         
-        $sleepSecs = [Math]::Min(10, $PollInterval)
-        if ($sleepSecs -lt 2) { $sleepSecs = 2 } 
+        $sleepSecs = $PollInterval
+        if ($sleepSecs -lt 2) { $sleepSecs = 2 }
         Start-Sleep -Seconds $sleepSecs
     }
 

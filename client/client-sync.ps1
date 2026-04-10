@@ -281,10 +281,17 @@ function Invoke-ParallelDownload {
 
         $jobs = foreach ($chunk in $toDownload) {
             Start-Job -ScriptBlock {
-                param($localPath, $remoteHost, $remotePort, $remoteUser, $remotePath, $startBlock, $numBlocks, $blockSize)
+                param($localPath, $remoteHost, $remotePort, $remoteUser, $remotePath, $startBlock, $numBlocks, $blockSize, $totalSize)
                 
                 try {
                     $byteOffset = [Int64]$startBlock * $blockSize
+                    
+                    # Calculate exact bytes remaining for this chunk
+                    $bytesRemaining = [Int64]$numBlocks * $blockSize
+                    if ($byteOffset + $bytesRemaining -gt $totalSize) { 
+                        $bytesRemaining = $totalSize - $byteOffset 
+                    }
+                    
                     $target = if ($remoteUser) { "${remoteUser}@${remoteHost}" } else { $remoteHost }
                     $pArr = if ($remotePort) { @("-p", $remotePort) } else { @() }
                     $sshOpts = @("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "-o", "BatchMode=yes")
@@ -303,16 +310,23 @@ function Invoke-ParallelDownload {
                     
                     $bufSize = 256KB
                     $buffer = New-Object byte[] $bufSize
-                    while ($true) {
-                        $read = $stdout.Read($buffer, 0, $bufSize)
+                    while ($bytesRemaining -gt 0) {
+                        $toRead = if ($bytesRemaining -lt $bufSize) { $bytesRemaining } else { $bufSize }
+                        $read = $stdout.Read($buffer, 0, $toRead)
                         if ($read -le 0) { break }
                         $file.Write($buffer, 0, $read)
+                        $bytesRemaining -= $read
                     }
-                    $file.Close(); $p.WaitForExit()
-                    if ($p.ExitCode -ne 0) { return "Error: Exit $($p.ExitCode)" }
-                    return "OK"
+                    $file.Close()
+                    
+                    # We have all our bytes - force kill SSH process no matter what network state it's in
+                    if (-not $p.HasExited) { $p.Kill() }
+                    
+                    # If we got all bytes, it's a success regardless of SSH exit status
+                    if ($bytesRemaining -le 0) { return "OK" }
+                    return "Error: Incomplete transfer (missing $bytesRemaining bytes)"
                 } catch { return "Worker Error: $($_.Exception.Message)" }
-            } -ArgumentList $LocalPath, $RemoteHost, $RemotePort, $RemoteUser, $RemotePath, $chunk.StartBlock, $chunk.NumBlocks, $blockSize
+            } -ArgumentList $LocalPath, $RemoteHost, $RemotePort, $RemoteUser, $RemotePath, $chunk.StartBlock, $chunk.NumBlocks, $blockSize, $fileSize
         }
 
         Write-Log "Downloading with $NumThreads streams..."

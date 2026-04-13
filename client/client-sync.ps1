@@ -392,48 +392,60 @@ try {
     $remoteLogPath = ""
     $lastStatusUpdate = Get-Date
     $serverFailed = $false
-    
+    $lastLogContent = ""
+
     while ($true) {
         try {
             # Check for completion or failure
             $completionCheck = Invoke-SSH "if [ -f '$remoteDone' ]; then echo DONE; fi; if [ -f '$remoteFailed' ]; then echo FAILED; fi; exit 0" -maxRetries 2
-            if ($completionCheck -match 'DONE') { 
+            if ($completionCheck -match 'DONE') {
                 Write-Host "" # Clear line
                 Write-Log "Encoding finished successfully!"
-                break 
+                break
             }
             if ($completionCheck -match 'FAILED') {
                 Write-Host ""
                 $serverFailed = $true
                 break
             }
-            
+
             # Try to find the log file if we don't have it yet
             if (-not $remoteLogPath) {
                 $logDir = [System.IO.Path]::GetDirectoryName($RemoteIncomingPath) + "/logs"
                 $logDir = $logDir.Replace('\', '/')
-                
+
                 $foundLog = Invoke-SSH "find '$logDir' -maxdepth 1 -type f -name '${nameNoExt}_*.log' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-; exit 0" -maxRetries 2
                 if ($foundLog -and $foundLog.Trim()) {
                     $remoteLogPath = $foundLog.Trim()
                     Write-Log "Found remote log: $([System.IO.Path]::GetFileName($remoteLogPath))"
                 }
             }
-            
+
             $statusMsg = "Encoding in progress..."
             if ($remoteLogPath) {
-                # Just print the last line as requested
-                $lastLine = Invoke-SSH "if [ -f '$remoteLogPath' ]; then tail -n 1 '$remoteLogPath' 2>/dev/null; fi; exit 0" -maxRetries 2
-                if ($lastLine -and $lastLine.Trim()) {
-                    $statusMsg = $lastLine.Trim()
+                # Get the current full log content
+                $currentLog = Invoke-SSH "if [ -f '$remoteLogPath' ]; then cat '$remoteLogPath' 2>/dev/null; fi; exit 0" -maxRetries 2
+                if ($currentLog -and $currentLog.Trim()) {
+                    # Find new content since last check
+                    $newContent = $currentLog.Substring($lastLogContent.Length)
+                    if ($newContent.Trim()) {
+                        # Split on 'speed=' to separate progress lines and add newlines
+                        $progressLines = $newContent -split '(?=speed=)'
+                        foreach ($line in $progressLines) {
+                            if ($line.Trim()) {
+                                Write-Log $line.Trim()
+                            }
+                        }
+                    }
+                    $lastLogContent = $currentLog
                 }
+            } else {
+                Write-Log $statusMsg
             }
-            
-            Write-Log $statusMsg
         } catch {
             Write-Log "Connection lost. Waiting for server..."
         }
-        
+
         $sleepSecs = $PollInterval
         if ($sleepSecs -lt 2) { $sleepSecs = 2 }
         Start-Sleep -Seconds $sleepSecs

@@ -295,15 +295,16 @@ function Invoke-ParallelDownload {
                     $target = if ($remoteUser) { "${remoteUser}@${remoteHost}" } else { $remoteHost }
                     $pArr = if ($remotePort) { @("-p", $remotePort) } else { @() }
                     $sshOpts = @("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "-o", "BatchMode=yes")
-                    $remoteCmd = "dd if='$remotePath' bs=$blockSize skip=$startBlock count=$numBlocks status=none"
+                    $remoteCmd = "dd if='$remotePath' bs=$blockSize skip=$startBlock count=$numBlocks iflag=fullblock status=none"
                     
                     $procInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $procInfo.FileName = "ssh"
                     $allArgs = ($pArr + $sshOpts + @($target, "`"$remoteCmd`"")) -join " "
                     $procInfo.Arguments = $allArgs
-                    $procInfo.UseShellExecute = $false; $procInfo.RedirectStandardOutput = $true; $procInfo.CreateNoWindow = $true
+                    $procInfo.UseShellExecute = $false; $procInfo.RedirectStandardOutput = $true; $procInfo.RedirectStandardInput = $true; $procInfo.RedirectStandardError = $true; $procInfo.CreateNoWindow = $true
                     
                     $p = [System.Diagnostics.Process]::Start($procInfo)
+                    $p.StandardInput.Close() # Break stdin link so ssh.exe doesn't hang waiting for console input on Windows
                     $stdout = $p.StandardOutput.BaseStream
                     $file = [System.IO.File]::Open($localPath,[System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::Write,[System.IO.FileShare]::ReadWrite)
                     $file.Seek($byteOffset, 0)

@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
 REM =========================================================
 REM CONFIGURATION
@@ -95,6 +96,7 @@ if %errorlevel% neq 0 (
     echo #########################################################
     pause
     color 07
+    exit /b %errorlevel%
 ) else (
     echo.
     echo [SUCCESS] "%~nx1" finished.

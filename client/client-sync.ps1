@@ -56,7 +56,9 @@ function Invoke-SSH {
     $attempt = 0
     while ($attempt -lt $maxRetries) {
         $attempt++
-        $result = & ssh @pArgs @sshArgs $target $cmd
+        # Redirect stdin from NUL to prevent SSH from inheriting/blocking console stdin
+        # This fixes hangs when launched from .bat drag-and-drop
+        $result = & ssh @pArgs @sshArgs $target $cmd < $null
         if ($LASTEXITCODE -eq 0) { return $result }
         
         if ($attempt -lt $maxRetries) {
@@ -391,16 +393,14 @@ try {
     # 5. Poll for completion with live progress
     $startTime = Get-Date
     $remoteLogPath = ""
-    $lastStatusUpdate = Get-Date
     $serverFailed = $false
-    $lastLogContent = ""
 
     while ($true) {
         try {
-            # Check for completion or failure
+            # Check for completion or failure first — skip log fetch if done
             $completionCheck = Invoke-SSH "if [ -f '$remoteDone' ]; then echo DONE; fi; if [ -f '$remoteFailed' ]; then echo FAILED; fi; exit 0" -maxRetries 2
             if ($completionCheck -match 'DONE') {
-                Write-Host "" # Clear line
+                Write-Host "" # Clear progress line
                 Write-Log "Encoding finished successfully!"
                 break
             }
@@ -422,26 +422,16 @@ try {
                 }
             }
 
-            $statusMsg = "Encoding in progress..."
+            # Show last progress line from log (tail only, never full log)
             if ($remoteLogPath) {
-                # Get the current full log content
-                $currentLog = Invoke-SSH "if [ -f '$remoteLogPath' ]; then cat '$remoteLogPath' 2>/dev/null; fi; exit 0" -maxRetries 2
-                if ($currentLog -and $currentLog.Trim()) {
-                    # Find new content since last check
-                    $newContent = $currentLog.Substring($lastLogContent.Length)
-                    if ($newContent.Trim()) {
-                        # Split on 'speed=' to separate progress lines and add newlines
-                        $progressLines = $newContent -split '(?=speed=)'
-                        foreach ($line in $progressLines) {
-                            if ($line.Trim()) {
-                                Write-Log $line.Trim()
-                            }
-                        }
-                    }
-                    $lastLogContent = $currentLog
+                $tailLine = Invoke-SSH "tail -c 500 '$remoteLogPath' 2>/dev/null | tr '\r' '\n' | grep -E 'frame=|size=|time=' | tail -n 1; exit 0" -maxRetries 2
+                if ($tailLine -and $tailLine.Trim()) {
+                    $elapsed = ((Get-Date) - $startTime).ToString('hh\:mm\:ss')
+                    Write-Host -NoNewline "`r[client] [$elapsed] $($tailLine.Trim())          "
                 }
             } else {
-                Write-Log $statusMsg
+                $elapsed = ((Get-Date) - $startTime).ToString('hh\:mm\:ss')
+                Write-Host -NoNewline "`r[client] [$elapsed] Waiting for encoding to start...          "
             }
         } catch {
             Write-Log "Connection lost. Waiting for server..."

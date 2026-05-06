@@ -128,7 +128,8 @@ if ($VideoEncoder) {
                      "export AUDIO_ENCODER=$(Get-ShellSafe $AudioEncoder)`n" +
                      "export OUTPUT_SUFFIX=$(Get-ShellSafe $OutputSuffix)`n" +
                      "export FINAL_EXT=$(Get-ShellSafe $FinalExt)`n" +
-                     "export MOV_FLAGS=$(Get-ShellSafe $MovFlags)"
+                     "export MOV_FLAGS=$(Get-ShellSafe $MovFlags)`n" +
+                     "export ORIGINAL_PATH=$(Get-ShellSafe $fullLocal)"
     Set-Content -Path $tmpPreset -Value $presetContent -Encoding ASCII
 } elseif ($NamedPreset) {
     Write-Log "Using named remote preset: $NamedPreset"

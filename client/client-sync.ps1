@@ -58,7 +58,7 @@ function Invoke-SSH {
         $attempt++
         # Redirect stdin from NUL to prevent SSH from inheriting/blocking console stdin
         # This fixes hangs when launched from .bat drag-and-drop
-        $result = & ssh @pArgs @sshArgs $target $cmd < $null
+        $result = $null | & ssh @pArgs @sshArgs $target $cmd
         if ($LASTEXITCODE -eq 0) { return $result }
         
         if ($attempt -lt $maxRetries) {

@@ -23,7 +23,7 @@ function Invoke-SSH {
     $attempt = 0
     while ($attempt -lt $maxRetries) {
         $attempt++
-        $result = & ssh @pArgs @sshArgs $target $cmd < $null
+        $result = $null | & ssh @pArgs @sshArgs $target $cmd
         if ($LASTEXITCODE -eq 0) { return $result }
         Start-Sleep -Seconds 2
     }

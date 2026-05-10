@@ -192,6 +192,7 @@ set -euo pipefail
 INPUT="$1"
 # Use :- for defaults that apply if variable is empty or unset
 # Use - for defaults that apply only if variable is unset
+INPUT_OPTIONS="${INPUT_OPTIONS:-}"
 VIDEO_ENCODER="${VIDEO_ENCODER:--c:v libx264 -crf 22 -preset veryslow -tune film}"
 AUDIO_ENCODER="${AUDIO_ENCODER:--c:a libopus -b:a 96k}"
 OUTPUT_SUFFIX="${OUTPUT_SUFFIX--encoded}"
@@ -202,7 +203,7 @@ MOV_FLAGS="${MOV_FLAGS:--movflags +faststart}"
 OUTPUT_PATH="$OUTPUT_DIR/$(basename "${INPUT%.*}")${OUTPUT_SUFFIX}${FINAL_EXT}"
 
 echo "Running FFmpeg..."
-ffmpeg -hide_banner -y -i "$INPUT" -map_metadata 0 \
+ffmpeg -hide_banner -y $INPUT_OPTIONS -i "$INPUT" -map_metadata 0 \
   $VIDEO_ENCODER $AUDIO_ENCODER $MOV_FLAGS "$OUTPUT_PATH"
 EOF_DELIVERY
 

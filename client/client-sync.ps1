@@ -23,6 +23,7 @@ if (-not $AudioEncoder) { $AudioEncoder = $env:AUDIO_ENCODER }
 if (-not $OutputSuffix) { $OutputSuffix = $env:OUTPUT_SUFFIX }
 if (-not $FinalExt) { $FinalExt = $env:FINAL_EXT }
 if (-not $MovFlags) { $MovFlags = $env:MOV_FLAGS }
+if (-not $InputOptions) { $InputOptions = $env:INPUT_OPTIONS }
 if (-not $NamedPreset) { $NamedPreset = $env:SELECTED_PRESET_NAME }
 
 # Cleanup any trailing padding or misbound names
@@ -129,6 +130,7 @@ if ($VideoEncoder) {
                      "export OUTPUT_SUFFIX=$(Get-ShellSafe $OutputSuffix)`n" +
                      "export FINAL_EXT=$(Get-ShellSafe $FinalExt)`n" +
                      "export MOV_FLAGS=$(Get-ShellSafe $MovFlags)`n" +
+                     "export INPUT_OPTIONS=$(Get-ShellSafe $InputOptions)`n" +
                      "export ORIGINAL_PATH=$(Get-ShellSafe $fullLocal)"
     Set-Content -Path $tmpPreset -Value $presetContent -Encoding ASCII
 } elseif ($NamedPreset) {

@@ -451,7 +451,10 @@ try {
     $tmpDone = [System.IO.Path]::GetTempFileName()
     Invoke-SCP -src "${target}:${remoteDone}" -dest "$tmpDone"
 
-    $doneJson = Get-Content $tmpDone -Raw | ConvertFrom-Json
+    $rawDone = Get-Content $tmpDone -Raw
+    # Fix unescaped backslashes (Windows paths from older server versions)
+    $rawDone = $rawDone.Replace([string][char]92, [string][char]92 + [string][char]92)
+    $doneJson = $rawDone | ConvertFrom-Json
     $outName = $doneJson.output
     $remoteOutputPath = "$RemoteFinishedPath/$outName"
 

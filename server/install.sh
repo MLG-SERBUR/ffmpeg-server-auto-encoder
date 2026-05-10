@@ -124,7 +124,9 @@ process_job() {
     if [ -n "$expected_output" ]; then
       local sha
       sha=$(sha256sum "$expected_output" | awk '{print $1}')
-      echo "{\"output\":\"$(basename "$expected_output")\",\"sha256\":\"$sha\",\"client_path\":\"${ORIGINAL_PATH:-}\"}" > "$FINISHED/${name}.done"
+      local escaped_path="${ORIGINAL_PATH:-}"
+      escaped_path="${escaped_path//\\/\\\\}"
+      echo "{\"output\":\"$(basename "$expected_output")\",\"sha256\":\"$sha\",\"client_path\":\"${escaped_path}\"}" > "$FINISHED/${name}.done"
       log "Job succeeded: $(basename "$expected_output")"
       if [ "$KEEP_INPUT_ON_SUCCESS" = "true" ]; then
         mv "$PROCESSING/$filename" "$ARCHIVE/"

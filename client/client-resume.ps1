@@ -106,16 +106,24 @@ if (-not $doneFiles) {
         $target = if ($RemoteUser) { "${RemoteUser}@${RemoteHost}" } else { $RemoteHost }
         Invoke-SCP -src "${target}:$doneFile" -dest "$tmpDone"
         
-        $doneJson = Get-Content $tmpDone -Raw | ConvertFrom-Json
+        $rawDone = Get-Content $tmpDone -Raw
+        # Fix unescaped backslashes (Windows paths from older server versions)
+        $rawDone = $rawDone.Replace([string][char]92, [string][char]92 + [string][char]92)
+        $doneJson = $rawDone | ConvertFrom-Json
         $outName = $doneJson.output
         $remoteOut = "$RemoteFinishedPath/$outName"
         
         $localDir = Get-Location
         if ($doneJson.client_path) {
-            $localDir = [System.IO.Path]::GetDirectoryName($doneJson.client_path)
-            if (-not (Test-Path $localDir)) { 
-                Write-Log "Original path $localDir not found, using current dir."
-                $localDir = Get-Location 
+            try {
+                $localDir = [System.IO.Path]::GetDirectoryName($doneJson.client_path)
+                if (-not (Test-Path $localDir)) { 
+                    Write-Log "Original path $localDir not found, using current dir."
+                    $localDir = Get-Location 
+                }
+            } catch {
+                Write-Log "Could not resolve client_path, using current dir."
+                $localDir = Get-Location
             }
         }
         
@@ -128,11 +136,13 @@ if (-not $doneFiles) {
         if ($localSha -eq $doneJson.sha256.ToLower()) {
             Write-Log "Success! Verified: $localSha"
             
-            if ($doneJson.client_path -and (Test-Path $doneJson.client_path)) {
-                Write-Log "Recycling original: $($doneJson.client_path)"
-                Add-Type -AssemblyName Microsoft.VisualBasic
-                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($doneJson.client_path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-            }
+            try {
+                if ($doneJson.client_path -and (Test-Path $doneJson.client_path)) {
+                    Write-Log "Recycling original: $($doneJson.client_path)"
+                    Add-Type -AssemblyName Microsoft.VisualBasic
+                    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($doneJson.client_path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+                }
+            } catch { Write-Log "Could not recycle original (path may be invalid)." }
             
             Write-Log "Cleaning up server..."
             Invoke-SSH "rm -f '$doneFile' '$remoteOut'"

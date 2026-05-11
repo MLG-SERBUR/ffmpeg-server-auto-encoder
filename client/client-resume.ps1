@@ -107,16 +107,15 @@ if (-not $doneFiles) {
         Invoke-SCP -src "${target}:$doneFile" -dest "$tmpDone"
         
         $rawDone = Get-Content $tmpDone -Raw
-        # Fix unescaped backslashes (Windows paths from older server versions)
-        $rawDone = $rawDone.Replace([string][char]92, [string][char]92 + [string][char]92)
         $doneJson = $rawDone | ConvertFrom-Json
         $outName = $doneJson.output
         $remoteOut = "$RemoteFinishedPath/$outName"
         
         $localDir = Get-Location
         if ($doneJson.client_path) {
+            $cleanPath = $doneJson.client_path.Trim()
             try {
-                $localDir = [System.IO.Path]::GetDirectoryName($doneJson.client_path)
+                $localDir = [System.IO.Path]::GetDirectoryName($cleanPath)
                 if (-not (Test-Path $localDir)) { 
                     Write-Log "Original path $localDir not found, using current dir."
                     $localDir = Get-Location 
@@ -137,10 +136,13 @@ if (-not $doneFiles) {
             Write-Log "Success! Verified: $localSha"
             
             try {
-                if ($doneJson.client_path -and (Test-Path $doneJson.client_path)) {
-                    Write-Log "Recycling original: $($doneJson.client_path)"
-                    Add-Type -AssemblyName Microsoft.VisualBasic
-                    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($doneJson.client_path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+                if ($doneJson.client_path) {
+                    $cleanPath = $doneJson.client_path.Trim()
+                    if (Test-Path $cleanPath) {
+                        Write-Log "Recycling original: $cleanPath"
+                        Add-Type -AssemblyName Microsoft.VisualBasic
+                        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($cleanPath, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+                    }
                 }
             } catch { Write-Log "Could not recycle original (path may be invalid)." }
             

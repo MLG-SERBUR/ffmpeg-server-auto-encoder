@@ -207,7 +207,36 @@ ffmpeg -hide_banner -y $INPUT_OPTIONS -i "$INPUT" -map_metadata 0 \
   $VIDEO_ENCODER $AUDIO_ENCODER $MOV_FLAGS "$OUTPUT_PATH"
 EOF_DELIVERY
 
-# 4. Create default preset
+# 4. Create abort.sh
+cat << 'EOF_ABORT' | sudo tee "$TARGET_DIR/abort.sh" > /dev/null
+#!/usr/bin/env bash
+# abort.sh - Abort current encoding job and stop the worker service
+
+BASE_DIR="/srv/ffmpeg-automation"
+PROCESSING="$BASE_DIR/processing"
+FAILED="$BASE_DIR/failed"
+
+echo "Aborting current FFmpeg process..."
+sudo pkill -9 ffmpeg || echo "No ffmpeg process found."
+
+echo "Stopping ffmpeg-worker service..."
+sudo systemctl stop ffmpeg-worker
+
+echo "Cleaning up processing directory..."
+if [ -d "$PROCESSING" ]; then
+    for f in "$PROCESSING"/*; do
+        if [ -e "$f" ]; then
+            echo "Moving $(basename "$f") to failed/"
+            sudo mv "$f" "$FAILED/"
+        fi
+    done
+fi
+
+echo "Done. Encode aborted and service stopped."
+echo "To resume other jobs: sudo systemctl start ffmpeg-worker"
+EOF_ABORT
+
+# 5. Create default preset
 cat << 'EOF_PRESET' | sudo tee "$TARGET_DIR/presets/default.sh" > /dev/null
 export VIDEO_ENCODER="-c:v libx264 -crf 22 -preset veryslow -tune film"
 export AUDIO_ENCODER="-c:a libopus -b:a 96k"

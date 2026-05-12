@@ -21,7 +21,8 @@ High-speed remote video encoding using parallel SSH streams.
    - Perform a parallel multipart download of the result.
    - Verify the final checksum.
    - Archive the local source file.
-2. **Resume/Recovery**: If you shut down during an encode, run `resume-finished.bat` later. It will scan the server, download finished results to their original directories, and recycle source files.
+2. **Abort**: Run `abort-remote.bat` to stop a running encode on the server and clean up the processing queue.
+3. **Resume/Recovery**: If you shut down during an encode, run `resume-finished.bat` later. It will scan the server, download finished results to their original directories, and recycle source files.
 
 ## Requirements
 

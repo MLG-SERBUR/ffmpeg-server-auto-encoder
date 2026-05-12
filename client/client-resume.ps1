@@ -15,9 +15,9 @@ if (-not $RemoteUser) { $RemoteUser = $env:REMOTE_USER }
 function Write-Log { param($m) Write-Host "[resume] $m" -ForegroundColor Yellow }
 
 function Invoke-SSH {
-    param($cmd, $maxRetries = 5)
+    param($cmd, $maxRetries = 20)
     $target = if ($RemoteUser) { "${RemoteUser}@${RemoteHost}" } else { $RemoteHost }
-    $sshArgs = @("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes")
+    $sshArgs = @("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "-o", "BatchMode=yes")
     $pArgs = if ($RemotePort) { @("-p", $RemotePort) } else { @() }
     
     $attempt = 0
@@ -25,16 +25,33 @@ function Invoke-SSH {
         $attempt++
         $result = $null | & ssh @pArgs @sshArgs $target $cmd
         if ($LASTEXITCODE -eq 0) { return $result }
-        Start-Sleep -Seconds 2
+        
+        if ($attempt -lt $maxRetries) {
+            Write-Warning "[ssh] Connection lost or command failed (attempt $attempt/$maxRetries). Retrying in 5s..."
+            Start-Sleep -Seconds 5
+        }
     }
     throw "SSH failed: $cmd"
 }
 
 function Invoke-SCP {
-    param($src, $dest)
+    param($src, $dest, $maxRetries = 10)
+    $target = if ($RemoteUser) { "${RemoteUser}@${RemoteHost}" } else { $RemoteHost }
     $pArgs = if ($RemotePort) { @("-P", $RemotePort) } else { @() }
-    $scpArgs = @("-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes")
-    & scp @pArgs @scpArgs "$src" "$dest"
+    $scpArgs = @("-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes")
+    
+    $attempt = 0
+    while ($attempt -lt $maxRetries) {
+        $attempt++
+        & scp @pArgs @scpArgs "$src" "$dest"
+        if ($LASTEXITCODE -eq 0) { return }
+        
+        if ($attempt -lt $maxRetries) {
+            Write-Warning "[scp] Transfer failed (attempt $attempt/$maxRetries). Retrying in 5s..."
+            Start-Sleep -Seconds 5
+        }
+    }
+    throw "SCP failed: $src -> $dest"
 }
 
 function Invoke-ParallelDownload {
@@ -156,11 +173,6 @@ if (-not $doneFiles) {
 }
 
 Write-Log "Status of pending jobs:"
-Invoke-SSH "
-echo '--- Active (Processing) ---'
-ls /srv/ffmpeg-automation/processing/ 2>/dev/null | grep -v '.preset$'
-echo '--- Queued (Incoming) ---'
-ls /srv/ffmpeg-automation/incoming/ 2>/dev/null | grep -vE '(.partial|.preset)$'
-" | Write-Host -ForegroundColor Cyan
+Invoke-SSH "echo '--- Active (Processing) ---'; ls /srv/ffmpeg-automation/processing/ 2>/dev/null | grep -v '.preset$'; echo '--- Queued (Incoming) ---'; ls /srv/ffmpeg-automation/incoming/ 2>/dev/null | grep -vE '(.partial|.preset)$'; exit 0" | Write-Host -ForegroundColor Cyan
 
 Read-Host "Press Enter to exit..."
